@@ -1,0 +1,13 @@
+name: QAuth
+version: '1.2-Release'
+main: com.kuank.QAuth
+api-version: '1.21'
+authors: [ kuank ]
+commands:
+  link:
+    description: 获取验证码
+    usage: /link
+  qadmin:
+    description: 管理员指令
+    usage: /qadmin <unlock|verify> <args>
+    permission: qauth.admin
