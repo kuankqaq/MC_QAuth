@@ -10,17 +10,38 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bstats.bukkit.Metrics;
 import java.util.*;
 
 public final class QAuth extends JavaPlugin implements Listener {
 
     private final Set<UUID> frozenPlayers = new HashSet<>();
     private final Map<String, UUID> codeMap = new HashMap<>();
+    private String serverId;
+    private static final int BSTATS_PLUGIN_ID = 29266; // 需要在bStats注册获取
 
     @Override
     public void onEnable() {
+        saveDefaultConfig();
+        serverId = getConfig().getString("server-id", "default");
+
+        if (serverId.equals("default")) {
+            getLogger().warning("========================================");
+            getLogger().warning("警告: server-id 未配置！");
+            getLogger().warning("多服务器环境下请务必设置唯一的 server-id");
+            getLogger().warning("编辑 plugins/QAuth/config.yml 进行配置");
+            getLogger().warning("========================================");
+        }
+
+        new Metrics(this, BSTATS_PLUGIN_ID);
+
         Bukkit.getPluginManager().registerEvents(this, this);
-        getLogger().info("QAuth v1.2 by kuank 已加载！");
+        getLogger().info("QAuth v1.3 已加载！服务器ID: " + serverId);
+    }
+
+    private String getMessage(String key) {
+        String msg = getConfig().getString("messages." + key, "");
+        return msg.replace("&", "§");
     }
 
     @EventHandler
@@ -28,8 +49,8 @@ public final class QAuth extends JavaPlugin implements Listener {
         Player player = event.getPlayer();
         if (!player.getScoreboardTags().contains("verified")) {
             frozenPlayers.add(player.getUniqueId());
-            player.sendMessage("§c您的账号未绑定QQ，已被限制移动！");
-            player.sendMessage("§a请输入指令 /link 获取验证码");
+            player.sendMessage(getMessage("not-bound"));
+            player.sendMessage(getMessage("use-link"));
         }
     }
 
@@ -56,13 +77,13 @@ public final class QAuth extends JavaPlugin implements Listener {
             if (!(sender instanceof Player)) return true;
             Player player = (Player) sender;
             if (player.getScoreboardTags().contains("verified")) {
-                player.sendMessage("§a无需重复验证。");
+                player.sendMessage(getMessage("already-verified"));
                 return true;
             }
-            String code = UUID.randomUUID().toString().substring(0, 6).toLowerCase();
+            String code = serverId + "-" + UUID.randomUUID().toString().substring(0, 6).toLowerCase();
             codeMap.values().remove(player.getUniqueId());
             codeMap.put(code, player.getUniqueId());
-            player.sendMessage("§a验证码: §b" + code + " §7(请发给机器人: 绑定 " + code + ")");
+            player.sendMessage(getMessage("code-generated").replace("{code}", code));
             return true;
         }
 
@@ -112,6 +133,6 @@ public final class QAuth extends JavaPlugin implements Listener {
     private void unlockPlayer(Player p) {
         p.addScoreboardTag("verified");
         frozenPlayers.remove(p.getUniqueId());
-        p.sendMessage("§a【系统】验证成功/绑定信息已更新，限制解除！");
+        p.sendMessage(getMessage("verify-success"));
     }
 }
