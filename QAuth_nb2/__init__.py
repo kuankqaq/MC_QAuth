@@ -32,8 +32,32 @@ def parse_code(code: str):
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS binds
-                 (qq_id TEXT PRIMARY KEY, game_name TEXT UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    # 获取第一个服务器ID作为旧数据的默认服务器
+    first_server_id = list(RCON_SERVERS.keys())[0] if RCON_SERVERS else 'default'
+
+    # 检查是否需要迁移旧表
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='binds'")
+    if c.fetchone():
+        # 检查表结构是否有server_id列
+        c.execute("PRAGMA table_info(binds)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'server_id' not in columns:
+            # 迁移旧表：旧玩家绑定到第一个服务器
+            c.execute(f"ALTER TABLE binds ADD COLUMN server_id TEXT DEFAULT '{first_server_id}'")
+            # 删除旧的唯一约束需要重建表
+            c.execute('''CREATE TABLE IF NOT EXISTS binds_new
+                         (qq_id TEXT, server_id TEXT, game_name TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          PRIMARY KEY (qq_id, server_id),
+                          UNIQUE (game_name, server_id))''')
+            c.execute("INSERT INTO binds_new (qq_id, server_id, game_name, created_at) SELECT qq_id, server_id, game_name, created_at FROM binds")
+            c.execute("DROP TABLE binds")
+            c.execute("ALTER TABLE binds_new RENAME TO binds")
+    else:
+        # 创建新表结构：支持多服务器绑定
+        c.execute('''CREATE TABLE IF NOT EXISTS binds
+                     (qq_id TEXT, server_id TEXT, game_name TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      PRIMARY KEY (qq_id, server_id),
+                      UNIQUE (game_name, server_id))''')
     conn.commit()
     conn.close()
 
@@ -59,9 +83,11 @@ async def handle_bind(bot: Bot, event: MessageEvent, args: tuple = RegexGroup())
     c = conn.cursor()
 
     try:
-        c.execute("SELECT game_name FROM binds WHERE qq_id=?", (user_qq,))
-        if c.fetchone():
-            await bind_cmd.finish("你已经绑定过账号了，无法重复绑定！")
+        # 检查该QQ在此服务器上是否已绑定
+        c.execute("SELECT game_name FROM binds WHERE qq_id=? AND server_id=?", (user_qq, server_id))
+        existing = c.fetchone()
+        if existing:
+            await bind_cmd.finish(f"你已经在此服务器绑定过账号 {existing[0]} 了，无法重复绑定！")
 
         with MCRcon(rcon_cfg["host"], rcon_cfg["password"], port=int(rcon_cfg["port"])) as mcr:
             resp = mcr.command(f"qadmin verify {full_code}")
@@ -69,11 +95,12 @@ async def handle_bind(bot: Bot, event: MessageEvent, args: tuple = RegexGroup())
 
             if "SUCCESS:" in clean_resp:
                 game_name = clean_resp.split(":")[1]
-                c.execute("SELECT qq_id FROM binds WHERE game_name=?", (game_name,))
+                # 检查该游戏账号在此服务器上是否已被其他QQ绑定
+                c.execute("SELECT qq_id FROM binds WHERE game_name=? AND server_id=?", (game_name, server_id))
                 if c.fetchone():
                     reply_msg = f"错误：游戏账号 {game_name} 已经被其他QQ绑定了！"
                 else:
-                    c.execute("INSERT INTO binds (qq_id, game_name) VALUES (?, ?)", (user_qq, game_name))
+                    c.execute("INSERT INTO binds (qq_id, server_id, game_name) VALUES (?, ?, ?)", (user_qq, server_id, game_name))
                     conn.commit()
                     server_name = rcon_cfg.get("name", server_id)
                     reply_msg = f"绑定成功！\n游戏ID: {game_name}\nQQ: {user_qq}\n服务器: {server_name}\n祝游戏愉快！"
@@ -106,13 +133,14 @@ async def handle_query(bot: Bot, event: MessageEvent, args: Message = CommandArg
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT qq_id FROM binds WHERE game_name=?", (target_name,))
-    row = c.fetchone()
+    c.execute("SELECT qq_id, server_id FROM binds WHERE game_name=?", (target_name,))
+    rows = c.fetchall()
     conn.close()
 
-    if row:
-        target_qq = row[0]
-        await query_cmd.finish(Message(f"游戏ID: {target_name}\n绑定QQ: ") + MessageSegment.at(target_qq))
+    if rows:
+        target_qq = rows[0][0]
+        servers = [RCON_SERVERS.get(r[1], {}).get("name", r[1]) for r in rows]
+        await query_cmd.finish(Message(f"游戏ID: {target_name}\n绑定QQ: ") + MessageSegment.at(target_qq) + Message(f"\n服务器: {', '.join(servers)}"))
     else:
         await query_cmd.finish(f"未查询到玩家 {target_name} 的绑定记录。")
 
@@ -153,9 +181,10 @@ async def handle_change(bot: Bot, event: MessageEvent):
     c = conn.cursor()
 
     try:
-        c.execute("DELETE FROM binds WHERE qq_id=?", (target_qq,))
-        c.execute("DELETE FROM binds WHERE game_name=?", (game_name,))
-        c.execute("INSERT INTO binds (qq_id, game_name) VALUES (?, ?)", (target_qq, game_name))
+        # 只删除该服务器上的绑定记录
+        c.execute("DELETE FROM binds WHERE qq_id=? AND server_id=?", (target_qq, server_id))
+        c.execute("DELETE FROM binds WHERE game_name=? AND server_id=?", (game_name, server_id))
+        c.execute("INSERT INTO binds (qq_id, server_id, game_name) VALUES (?, ?, ?)", (target_qq, server_id, game_name))
         conn.commit()
 
         rcon_info = ""
