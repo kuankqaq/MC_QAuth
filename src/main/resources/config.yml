@@ -3,6 +3,11 @@
 # 警告：使用默认值会导致多服务器验证码冲突！
 server-id: "default"
 
+# WebSocket 配置 (用于双向聊天)
+websocket:
+  enabled: false
+  port: 25580
+
 # 自定义提示消息
 messages:
   # 玩家加入时未绑定的提示

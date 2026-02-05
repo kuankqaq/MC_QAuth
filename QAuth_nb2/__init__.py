@@ -1,7 +1,8 @@
 ﻿import sqlite3
 import json
-from nonebot import on_regex, on_command, get_driver
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment, Message
+import asyncio
+from nonebot import on_regex, on_command, get_driver, get_bot
+from nonebot.adapters.onebot.v11 import Bot, MessageEvent, MessageSegment, Message, GroupMessageEvent
 from nonebot.params import RegexGroup, CommandArg
 from nonebot.permission import SUPERUSER
 from nonebot.exception import FinishedException
@@ -14,6 +15,15 @@ if isinstance(_rcon_cfg, str):
     RCON_SERVERS = json.loads(_rcon_cfg) if _rcon_cfg else {}
 else:
     RCON_SERVERS = _rcon_cfg if _rcon_cfg else {}
+
+# 双向聊天配置
+CHAT_GROUP_ID = getattr(config, "chat_group_id", "")
+_ws_cfg = getattr(config, "ws_servers", {})
+if isinstance(_ws_cfg, str):
+    WS_SERVERS = json.loads(_ws_cfg) if _ws_cfg else {}
+else:
+    WS_SERVERS = _ws_cfg if _ws_cfg else {}
+
 DB_FILE = "data.db"
 
 
@@ -222,3 +232,91 @@ async def handle_server_list(bot: Bot, event: MessageEvent):
         name = cfg.get("name", sid)
         lines.append(f"  {sid}: {name}")
     await server_list_cmd.finish("\n".join(lines))
+
+
+# ==================== 双向聊天功能 ====================
+
+# /chat 命令 - 发送消息到 MC 服务器
+chat_cmd = on_command("chat", priority=5)
+
+@chat_cmd.handle()
+async def handle_chat(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+    if not CHAT_GROUP_ID:
+        await chat_cmd.finish("聊天功能未配置！")
+
+    if isinstance(event, GroupMessageEvent) and str(event.group_id) != str(CHAT_GROUP_ID):
+        return
+
+    text = args.extract_plain_text().strip()
+    if not text:
+        await chat_cmd.finish("用法: /chat [服务器ID] <消息>\n例如: /chat sv1 你好")
+
+    parts = text.split(maxsplit=1)
+    if len(parts) == 2 and parts[0] in RCON_SERVERS:
+        server_id = parts[0]
+        message = parts[1]
+    elif len(parts) >= 1 and RCON_SERVERS:
+        server_id = list(RCON_SERVERS.keys())[0]
+        message = text
+    else:
+        await chat_cmd.finish("未配置服务器或消息为空！")
+        return
+
+    rcon_cfg = get_rcon_config(server_id)
+    if not rcon_cfg:
+        await chat_cmd.finish(f"未知的服务器: {server_id}")
+
+    try:
+        sender_name = event.sender.card or event.sender.nickname or str(event.user_id)
+        with MCRcon(rcon_cfg["host"], rcon_cfg["password"], port=int(rcon_cfg["port"])) as mcr:
+            # 使用 tellraw 避免 [Server] 前缀
+            tellraw_json = f'{{"text":"§b[QQ] §f{sender_name}: §7{message}"}}'
+            mcr.command(f'tellraw @a {tellraw_json}')
+        await chat_cmd.finish(f"消息已发送到 {rcon_cfg.get('name', server_id)}")
+    except FinishedException:
+        raise
+    except Exception as e:
+        await chat_cmd.finish(f"发送失败: {e}")
+
+
+# WebSocket 客户端 - 接收 MC 消息并转发到 QQ 群
+async def ws_client(server_id: str, ws_url: str):
+    """连接到 MC 服务器的 WebSocket 并转发消息到 QQ 群"""
+    import websockets
+
+    while True:
+        try:
+            async with websockets.connect(ws_url) as ws:
+                print(f"[QAuth] WebSocket 已连接到 {server_id}: {ws_url}")
+                async for message in ws:
+                    try:
+                        data = json.loads(message)
+                        if data.get("type") == "chat" and CHAT_GROUP_ID:
+                            player = data.get("player", "???")
+                            msg = data.get("message", "")
+                            srv_id = data.get("server_id", server_id)
+                            srv_name = RCON_SERVERS.get(srv_id, {}).get("name", srv_id)
+
+                            bot = get_bot()
+                            await bot.send_group_msg(
+                                group_id=int(CHAT_GROUP_ID),
+                                message=f"[{srv_name}] {player}: {msg}"
+                            )
+                    except Exception as e:
+                        print(f"[QAuth] 处理 WebSocket 消息出错: {e}")
+        except Exception as e:
+            print(f"[QAuth] WebSocket 连接失败 ({server_id}): {e}")
+            await asyncio.sleep(5)  # 5秒后重连
+
+
+# 启动 WebSocket 客户端
+driver = get_driver()
+
+@driver.on_startup
+async def start_ws_clients():
+    """机器人启动时连接到所有配置的 MC WebSocket 服务器"""
+    if not WS_SERVERS or not CHAT_GROUP_ID:
+        return
+
+    for server_id, ws_url in WS_SERVERS.items():
+        asyncio.create_task(ws_client(server_id, ws_url))

@@ -3,19 +3,23 @@ package com.kuank.qauth;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.minecraft.scoreboard.Scoreboard;
-import net.minecraft.scoreboard.Team;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
+import org.java_websocket.WebSocket;
+import org.java_websocket.handshake.ClientHandshake;
+import org.java_websocket.server.WebSocketServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.net.InetSocketAddress;
 import java.nio.file.*;
 import java.util.*;
 
@@ -30,6 +34,9 @@ public class QAuthMod implements DedicatedServerModInitializer {
     private String serverId = "default";
     private Properties config;
     private Path configPath;
+    private ChatWebSocketServer wsServer;
+    private boolean wsEnabled;
+    private int wsPort;
 
     @Override
     public void onInitializeServer() {
@@ -53,6 +60,8 @@ public class QAuthMod implements DedicatedServerModInitializer {
             } else {
                 // Create default config
                 config.setProperty("server-id", "default");
+                config.setProperty("websocket.enabled", "false");
+                config.setProperty("websocket.port", "25580");
                 config.setProperty("msg.not-bound", "§c您的账号未绑定QQ，已被限制移动！");
                 config.setProperty("msg.use-link", "§a请输入指令 /link 获取验证码");
                 config.setProperty("msg.code-generated", "§a验证码: §b{code} §7(请发给机器人: 绑定 {code})");
@@ -65,6 +74,8 @@ public class QAuthMod implements DedicatedServerModInitializer {
             }
 
             serverId = config.getProperty("server-id", "default");
+            wsEnabled = Boolean.parseBoolean(config.getProperty("websocket.enabled", "false"));
+            wsPort = Integer.parseInt(config.getProperty("websocket.port", "25580"));
 
             if (serverId.equals("default")) {
                 LOGGER.warn("========================================");
@@ -155,6 +166,25 @@ public class QAuthMod implements DedicatedServerModInitializer {
     }
 
     private void registerEvents() {
+        // Server start event - start WebSocket server
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            if (wsEnabled) {
+                startWebSocketServer();
+            }
+        });
+
+        // Server stop event - stop WebSocket server
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            if (wsServer != null) {
+                try {
+                    wsServer.stop(1000);
+                    LOGGER.info("WebSocket server stopped");
+                } catch (InterruptedException e) {
+                    LOGGER.warn("Error stopping WebSocket server: {}", e.getMessage());
+                }
+            }
+        });
+
         // Player join event
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
@@ -173,6 +203,26 @@ public class QAuthMod implements DedicatedServerModInitializer {
             frozenPlayers.remove(uuid);
             lastPositions.remove(uuid);
             codeMap.values().remove(uuid);
+        });
+
+        // Chat message event
+        ServerMessageEvents.CHAT_MESSAGE.register((message, senderEntity, params) -> {
+            if (!wsEnabled || wsServer == null) return;
+
+            String content = message.getContent().getString();
+            if (content.startsWith("#")) {
+                String chatMsg = content.substring(1).trim();
+                if (!chatMsg.isEmpty()) {
+                    String json = String.format(
+                        "{\"type\":\"chat\",\"server_id\":\"%s\",\"player\":\"%s\",\"message\":\"%s\"}",
+                        serverId,
+                        senderEntity.getName().getString(),
+                        chatMsg.replace("\\", "\\\\").replace("\"", "\\\"")
+                    );
+                    wsServer.broadcast(json);
+                    senderEntity.sendMessage(Text.literal("§7[QAuth] 消息已转发到QQ群"));
+                }
+            }
         });
 
         // Tick event for movement restriction
@@ -202,5 +252,42 @@ public class QAuthMod implements DedicatedServerModInitializer {
         frozenPlayers.remove(player.getUuid());
         lastPositions.remove(player.getUuid());
         player.sendMessage(Text.literal(getMessage("verify-success")));
+    }
+
+    private void startWebSocketServer() {
+        wsServer = new ChatWebSocketServer(new InetSocketAddress(wsPort));
+        wsServer.start();
+        LOGGER.info("WebSocket server started on port: {}", wsPort);
+    }
+
+    private class ChatWebSocketServer extends WebSocketServer {
+        public ChatWebSocketServer(InetSocketAddress address) {
+            super(address);
+        }
+
+        @Override
+        public void onOpen(WebSocket conn, ClientHandshake handshake) {
+            LOGGER.info("WebSocket client connected: {}", conn.getRemoteSocketAddress());
+        }
+
+        @Override
+        public void onClose(WebSocket conn, int code, String reason, boolean remote) {
+            LOGGER.info("WebSocket client disconnected: {}", conn.getRemoteSocketAddress());
+        }
+
+        @Override
+        public void onMessage(WebSocket conn, String message) {
+            // Not handling client messages for now
+        }
+
+        @Override
+        public void onError(WebSocket conn, Exception ex) {
+            LOGGER.warn("WebSocket error: {}", ex.getMessage());
+        }
+
+        @Override
+        public void onStart() {
+            LOGGER.info("WebSocket server started successfully");
+        }
     }
 }

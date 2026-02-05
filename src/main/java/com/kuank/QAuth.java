@@ -6,11 +6,17 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bstats.bukkit.Metrics;
+import org.java_websocket.WebSocket;
+import org.java_websocket.handshake.ClientHandshake;
+import org.java_websocket.server.WebSocketServer;
+
+import java.net.InetSocketAddress;
 import java.util.*;
 
 public final class QAuth extends JavaPlugin implements Listener {
@@ -18,7 +24,10 @@ public final class QAuth extends JavaPlugin implements Listener {
     private final Set<UUID> frozenPlayers = new HashSet<>();
     private final Map<String, UUID> codeMap = new HashMap<>();
     private String serverId;
-    private static final int BSTATS_PLUGIN_ID = 29266; // 需要在bStats注册获取
+    private static final int BSTATS_PLUGIN_ID = 29266;
+    private ChatWebSocketServer wsServer;
+    private boolean wsEnabled;
+    private int wsPort;
 
     @Override
     public void onEnable() {
@@ -33,10 +42,36 @@ public final class QAuth extends JavaPlugin implements Listener {
             getLogger().warning("========================================");
         }
 
+        // WebSocket 配置
+        wsEnabled = getConfig().getBoolean("websocket.enabled", false);
+        wsPort = getConfig().getInt("websocket.port", 25580);
+
+        if (wsEnabled) {
+            startWebSocketServer();
+        }
+
         new Metrics(this, BSTATS_PLUGIN_ID);
 
         Bukkit.getPluginManager().registerEvents(this, this);
         getLogger().info("QAuth v1.3 已加载！服务器ID: " + serverId);
+    }
+
+    @Override
+    public void onDisable() {
+        if (wsServer != null) {
+            try {
+                wsServer.stop(1000);
+                getLogger().info("WebSocket 服务端已关闭");
+            } catch (InterruptedException e) {
+                getLogger().warning("关闭 WebSocket 服务端时出错: " + e.getMessage());
+            }
+        }
+    }
+
+    private void startWebSocketServer() {
+        wsServer = new ChatWebSocketServer(new InetSocketAddress(wsPort));
+        wsServer.start();
+        getLogger().info("WebSocket 服务端已启动，端口: " + wsPort);
     }
 
     private String getMessage(String key) {
@@ -134,5 +169,56 @@ public final class QAuth extends JavaPlugin implements Listener {
         p.addScoreboardTag("verified");
         frozenPlayers.remove(p.getUniqueId());
         p.sendMessage(getMessage("verify-success"));
+    }
+
+    @EventHandler
+    public void onChat(AsyncPlayerChatEvent event) {
+        if (!wsEnabled || wsServer == null) return;
+
+        String message = event.getMessage();
+        if (message.startsWith("#")) {
+            String chatMsg = message.substring(1).trim();
+            if (!chatMsg.isEmpty()) {
+                String json = String.format(
+                    "{\"type\":\"chat\",\"server_id\":\"%s\",\"player\":\"%s\",\"message\":\"%s\"}",
+                    serverId,
+                    event.getPlayer().getName(),
+                    chatMsg.replace("\\", "\\\\").replace("\"", "\\\"")
+                );
+                wsServer.broadcast(json);
+                event.getPlayer().sendMessage("§7[QAuth] 消息已转发到QQ群");
+            }
+        }
+    }
+
+    private class ChatWebSocketServer extends WebSocketServer {
+        public ChatWebSocketServer(InetSocketAddress address) {
+            super(address);
+        }
+
+        @Override
+        public void onOpen(WebSocket conn, ClientHandshake handshake) {
+            getLogger().info("WebSocket 客户端已连接: " + conn.getRemoteSocketAddress());
+        }
+
+        @Override
+        public void onClose(WebSocket conn, int code, String reason, boolean remote) {
+            getLogger().info("WebSocket 客户端已断开: " + conn.getRemoteSocketAddress());
+        }
+
+        @Override
+        public void onMessage(WebSocket conn, String message) {
+            // 暂不处理客户端消息
+        }
+
+        @Override
+        public void onError(WebSocket conn, Exception ex) {
+            getLogger().warning("WebSocket 错误: " + ex.getMessage());
+        }
+
+        @Override
+        public void onStart() {
+            getLogger().info("WebSocket 服务端启动完成");
+        }
     }
 }

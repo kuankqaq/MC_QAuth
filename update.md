@@ -1,36 +1,79 @@
-# QAuth v1.3 更新日志
+# QAuth 更新日志
 
-## 更新概述
+## v1.4.1 - 双向聊天功能
 
-本次更新将 QAuth 从单服务器支持升级为多服务器支持，并新增 Fabric 1.20.1 版本。
+### 新增功能
+- **MC → QQ**: 玩家发送 `#` 开头的消息自动转发到 QQ 群，并提示玩家
+- **QQ → MC**: QQ 群用户通过 `/chat` 命令发送消息到 MC 服务器
+- WebSocket 反向连接架构，机器人无需公网 IP
+
+### Bug 修复
+- 修复 `/chat` 命令的 FinishedException 错误处理
+- 玩家发送 `#` 消息后显示"消息已转发到QQ群"提示
+- QQ→MC 消息使用 `tellraw` 命令，去除 `[Server]` 前缀
+
+### 版本号更新
+- Bukkit: 1.4.1-Release
+- Fabric: 1.4.1
+
+### 文件修改
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `pom.xml` | 修改 | 添加 Java-WebSocket 依赖 |
+| `QAuth-Fabric/build.gradle` | 修改 | 添加 Java-WebSocket 依赖 |
+| `src/main/java/com/kuank/QAuth.java` | 修改 | WebSocket 服务端 + 聊天监听 |
+| `QAuth-Fabric/.../QAuthMod.java` | 修改 | WebSocket 服务端 + 聊天监听 |
+| `QAuth_nb2/__init__.py` | 修改 | WebSocket 客户端 + /chat 命令 |
+| `src/main/resources/config.yml` | 修改 | 新增 websocket 配置节 |
+
+### 新增配置项
+
+**MC 服务器 (config.yml / qauth.properties)**:
+```yaml
+websocket:
+  enabled: false
+  port: 25580
+```
+
+**机器人 (.env)**:
+```properties
+CHAT_GROUP_ID=123456789
+WS_SERVERS={"sv1":"ws://mc-server-ip:25580"}
+```
+
+### 依赖要求
+- 机器人需安装: `pip install websockets`
 
 ---
 
-## 主要更新内容
+# QAuth v1.3 更新日志
 
-### 1. 多服务器支持
-- 验证码格式变更：`6位随机字符` → `服务器ID-6位随机字符`
-- 新增 `server-id` 配置项
-- 机器人支持多服务器 RCON 路由
+## 本次更新内容
+
+### 1. 修复 plugin.yml 版本号
+- 将版本号从 `1.2-Release` 修正为 `1.3-Release`
 
 ### 2. 新增 Fabric 1.20.1 支持
-- 新增 `QAuth-Fabric/` 目录
+- 新增 `QAuth-Fabric/` 目录，包含完整的 Fabric mod 项目
 - 支持 Minecraft 1.20.1 + Fabric Loader 0.15.x
 - 功能与 Bukkit 版本完全一致
 
-### 3. 新增功能
-- bStats 统计支持
-- 可自定义消息配置
-- `/服务器列表` 指令
+### 3. 文档整合
+- 将多服务器配置说明合并到 readme.md
+- 更新验证码格式说明
+- 添加 Fabric 版本安装说明
 
 ---
 
-## 验证码格式变更
+## Fabric Mod 构建方法
 
-| 版本 | 格式 | 示例 |
-|------|------|------|
-| v1.2 (旧) | 6位随机字符 | `a1b2c3` |
-| v1.3 (新) | 服务器ID-6位随机字符 | `sv1-a1b2c3` |
+```bash
+cd QAuth-Fabric
+./gradlew build
+```
+
+构建产物位于 `QAuth-Fabric/build/libs/qauth-fabric-1.3.jar`
 
 ---
 
@@ -38,35 +81,11 @@
 
 | 文件 | 操作 | 说明 |
 |------|------|------|
-| `QAuth/pom.xml` | 修改 | 版本升级、添加bStats依赖 |
-| `QAuth/src/.../plugin.yml` | 修改 | 版本号 1.2 → 1.3 |
-| `QAuth/src/.../config.yml` | 新建 | 服务器ID和自定义消息配置 |
-| `QAuth/src/.../QAuth.java` | 修改 | 多服务器支持、bStats统计 |
-| `QAuth-Fabric/` | 新建 | Fabric mod 项目 |
-| `QAuth_nb2/__init__.py` | 修改 | 多服务器RCON路由 |
-
----
-
-## 部署注意事项
-
-### MC服务器端
-1. 替换 `QAuth.jar` 为新版本
-2. 首次启动后编辑 `plugins/QAuth/config.yml`
-3. **必须**为每个服务器设置唯一的 `server-id`
-4. 重启服务器
-
-### 机器人端
-1. 更新 `QAuth_nb2/__init__.py`
-2. 修改 `.env` 文件，配置 RCON 信息
-3. 重启机器人
-
----
-
-## Fabric Mod 构建
-
-```bash
-cd QAuth-Fabric
-./gradlew build
-```
-
-构建产物：`QAuth-Fabric/build/libs/qauth-fabric-1.3.jar`
+| `src/main/resources/plugin.yml` | 修改 | 版本号 1.2 → 1.3 |
+| `QAuth-Fabric/build.gradle` | 新建 | Gradle 构建配置 |
+| `QAuth-Fabric/gradle.properties` | 新建 | 版本配置 |
+| `QAuth-Fabric/settings.gradle` | 新建 | 项目设置 |
+| `QAuth-Fabric/src/.../QAuthMod.java` | 新建 | Mod 主类 |
+| `QAuth-Fabric/src/.../fabric.mod.json` | 新建 | Mod 元数据 |
+| `readme.md` | 修改 | 合并更新内容 |
+| `update.md` | 修改 | 记录本次更新 |

@@ -6,7 +6,7 @@
 
     <groupId>com.kuank</groupId>
     <artifactId>Qauth</artifactId>
-    <version>1.3-Release</version>
+    <version>1.4.1-Release</version>
     <packaging>jar</packaging>
 
     <name>Qauth</name>
@@ -44,6 +44,10 @@
                                     <pattern>org.bstats</pattern>
                                     <shadedPattern>com.kuank.bstats</shadedPattern>
                                 </relocation>
+                                <relocation>
+                                    <pattern>org.java_websocket</pattern>
+                                    <shadedPattern>com.kuank.websocket</shadedPattern>
+                                </relocation>
                             </relocations>
                         </configuration>
                     </execution>
@@ -76,6 +80,12 @@
             <groupId>org.bstats</groupId>
             <artifactId>bstats-bukkit</artifactId>
             <version>3.0.2</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.java-websocket</groupId>
+            <artifactId>Java-WebSocket</artifactId>
+            <version>1.5.4</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>
