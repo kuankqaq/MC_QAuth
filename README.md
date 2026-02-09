@@ -5,7 +5,7 @@
 ---
 ## 0. 机器人配置
 此插件为nonebot2的自定义插件，协议使用onebot11，具体如何设置自定义插件在此不再赘述，请自行询问ai
-> 还有一种方法是使用qq官方机器人绑定你的服务器进行使用，[点击链接](https://qun.qq.com/qunpro/robot/qunshare?robot_uin=3889085785&robot_appid=102171637&biz_type=0&jumpsource=shorturl)私聊 /添加服务器 即可，请放心，我绝对不会使用您的服务器配置进行其他操作
+> 还有一种方法是使用qq官方机器人绑定你的服务器进行使用，[点击链接](https://qun.qq.com/qunpro/robot/qunshare?robot_uin=3889085785&robot_appid=102171637&biz_type=0&jumpsource=shorturl)私聊 /添加服务器 即可，请放心，我绝对不会使用您的服务器配置进行其他操作，务必注意，在群聊内使用功能时需@机器人
 
 ## 1. 玩家指南 (Player Guide)
 
