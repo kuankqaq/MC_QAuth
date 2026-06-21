@@ -1,0 +1,16 @@
+[
+{
+  "modid": "qauth",
+  "name": "QAuth",
+  "description": "Minecraft QQ authentication mod - bind QQ account to verify players",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["kuank"],
+  "credits": "",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]

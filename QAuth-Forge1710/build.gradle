@@ -1,0 +1,87 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        maven {
+            name = "forge"
+            url = "https://files.minecraftforge.net/maven"
+        }
+        maven {
+            name = "sonatype"
+            url = "https://oss.sonatype.org/content/repositories/snapshots/"
+        }
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:1.2-SNAPSHOT'
+    }
+}
+
+import net.minecraftforge.gradle.delayed.DelayedString
+
+apply plugin: 'forge'
+
+ext.forgeVersion = "1.7.10-10.13.4.1614-1.7.10"
+
+minecraft {
+    version = forgeVersion
+    runDir = "eclipse"
+}
+
+version = "1.5.0"
+group = "com.kuank"
+archivesBaseName = "QAuth-Forge1710"
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+tasks.withType(JavaCompile) {
+    sourceCompatibility = "1.8"
+    targetCompatibility = "1.8"
+}
+
+compileJava {
+    dependsOn deobfBinJar
+}
+
+configurations {
+    shade
+}
+
+dependencies {
+    compile 'org.java-websocket:Java-WebSocket:1.5.4'
+    compile 'org.slf4j:slf4j-api:2.0.6'
+    shade 'org.java-websocket:Java-WebSocket:1.5.4'
+    shade 'org.slf4j:slf4j-api:2.0.6'
+}
+
+jar {
+    from(configurations.shade.collect { it.isDirectory() ? it : zipTree(it) }) {
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/maven/**'
+        exclude 'module-info.class'
+        exclude 'META-INF/versions/**'
+    }
+}
+
+processResources {
+    from(sourceSets.main.resources.srcDirs) {
+        include 'mcmod.info'
+        expand 'version': project.version, 'mcversion': project.minecraft.version
+    }
+    from(sourceSets.main.resources.srcDirs) {
+        exclude 'mcmod.info'
+    }
+}
+
+afterEvaluate {
+    def forgeCacheDir = new File(gradle.gradleUserHomeDir, "caches/minecraft/net/minecraftforge/forge/${forgeVersion}")
+    def forgeBinJar = new File(forgeCacheDir, "forgeBin-${forgeVersion}.jar")
+    compileJava.doFirst {
+        classpath = files(forgeBinJar) + classpath
+    }
+
+    if (tasks.findByName('downloadClient')) {
+        tasks.downloadClient.setUrl(new DelayedString(project, "https://launcher.mojang.com/v1/objects/e80d9b3bf5085002218d4be59e668bac718abbc6/client.jar"))
+    }
+    if (tasks.findByName('downloadServer')) {
+        tasks.downloadServer.setUrl(new DelayedString(project, "https://launcher.mojang.com/v1/objects/952438ac4e01b4d115c5fc38f891710c4941df29/server.jar"))
+    }
+}

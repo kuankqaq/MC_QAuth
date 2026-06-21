@@ -1,6 +1,8 @@
 package com.kuank.qauth;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -9,6 +11,7 @@ import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
@@ -35,6 +38,8 @@ public class QAuthMod implements DedicatedServerModInitializer {
     private Properties config;
     private Path configPath;
     private ChatWebSocketServer wsServer;
+    private MinecraftServer minecraftServer;
+    private boolean authEnabled;
     private boolean wsEnabled;
     private int wsPort;
 
@@ -43,7 +48,7 @@ public class QAuthMod implements DedicatedServerModInitializer {
         loadConfig();
         registerCommands();
         registerEvents();
-        LOGGER.info("QAuth v1.3 (Fabric) loaded! Server ID: {}", serverId);
+        LOGGER.info("QAuth v1.5.0 (Fabric) loaded! Server ID: {}, auth enabled: {}", serverId, authEnabled);
     }
 
     private void loadConfig() {
@@ -60,6 +65,7 @@ public class QAuthMod implements DedicatedServerModInitializer {
             } else {
                 // Create default config
                 config.setProperty("server-id", "default");
+                config.setProperty("auth.enabled", "true");
                 config.setProperty("websocket.enabled", "false");
                 config.setProperty("websocket.port", "25580");
                 config.setProperty("msg.not-bound", "§c您的账号未绑定QQ，已被限制移动！");
@@ -74,6 +80,7 @@ public class QAuthMod implements DedicatedServerModInitializer {
             }
 
             serverId = config.getProperty("server-id", "default");
+            authEnabled = Boolean.parseBoolean(config.getProperty("auth.enabled", "true"));
             wsEnabled = Boolean.parseBoolean(config.getProperty("websocket.enabled", "false"));
             wsPort = Integer.parseInt(config.getProperty("websocket.port", "25580"));
 
@@ -105,6 +112,11 @@ public class QAuthMod implements DedicatedServerModInitializer {
                         return 0;
                     }
 
+                    if (!authEnabled) {
+                        player.sendMessage(Text.literal("QAuth verification is disabled on this server."));
+                        return 1;
+                    }
+
                     if (isVerified(player)) {
                         player.sendMessage(Text.literal(getMessage("already-verified")));
                         return 1;
@@ -131,6 +143,11 @@ public class QAuthMod implements DedicatedServerModInitializer {
                     .executes(context -> {
                         String code = StringArgumentType.getString(context, "code");
                         ServerCommandSource source = context.getSource();
+
+                        if (!authEnabled) {
+                            source.sendFeedback(() -> Text.literal("FAIL:AuthDisabled"), false);
+                            return 1;
+                        }
 
                         if (codeMap.containsKey(code)) {
                             UUID uuid = codeMap.get(code);
@@ -168,6 +185,7 @@ public class QAuthMod implements DedicatedServerModInitializer {
     private void registerEvents() {
         // Server start event - start WebSocket server
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            minecraftServer = server;
             if (wsEnabled) {
                 startWebSocketServer();
             }
@@ -175,6 +193,7 @@ public class QAuthMod implements DedicatedServerModInitializer {
 
         // Server stop event - stop WebSocket server
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            minecraftServer = null;
             if (wsServer != null) {
                 try {
                     wsServer.stop(1000);
@@ -188,6 +207,10 @@ public class QAuthMod implements DedicatedServerModInitializer {
         // Player join event
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
+
+            if (!authEnabled) {
+                return;
+            }
 
             if (!isVerified(player)) {
                 frozenPlayers.add(player.getUuid());
@@ -228,6 +251,9 @@ public class QAuthMod implements DedicatedServerModInitializer {
         // Tick event for movement restriction
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                if (!authEnabled) {
+                    return;
+                }
                 UUID uuid = player.getUuid();
                 if (frozenPlayers.contains(uuid)) {
                     Vec3d lastPos = lastPositions.get(uuid);
@@ -260,6 +286,19 @@ public class QAuthMod implements DedicatedServerModInitializer {
         LOGGER.info("WebSocket server started on port: {}", wsPort);
     }
 
+    private void broadcastWsChat(String sender, String message) {
+        MinecraftServer server = minecraftServer;
+        if (server == null) {
+            return;
+        }
+        server.execute(() -> {
+            Text text = Text.literal("§b[QQ] §f" + sender + ": §7" + message);
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                player.sendMessage(text);
+            }
+        });
+    }
+
     private class ChatWebSocketServer extends WebSocketServer {
         public ChatWebSocketServer(InetSocketAddress address) {
             super(address);
@@ -277,7 +316,19 @@ public class QAuthMod implements DedicatedServerModInitializer {
 
         @Override
         public void onMessage(WebSocket conn, String message) {
-            // Not handling client messages for now
+            try {
+                JsonObject json = new JsonParser().parse(message).getAsJsonObject();
+                if (!"chat".equals(json.has("type") ? json.get("type").getAsString() : "")) {
+                    return;
+                }
+                String sender = json.has("sender") ? json.get("sender").getAsString() : "QQ";
+                String chat = json.has("message") ? json.get("message").getAsString() : "";
+                if (!chat.trim().isEmpty()) {
+                    broadcastWsChat(sender, chat);
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Invalid WebSocket message: {}", e.getMessage());
+            }
         }
 
         @Override

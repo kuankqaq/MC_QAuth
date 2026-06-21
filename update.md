@@ -1,41 +1,29 @@
 # QAuth 更新日志
 
-## v1.4.1 - 双向聊天功能
+## v1.5.0
 
-### 新增功能
-- **MC → QQ**: 玩家发送 `#` 开头的消息自动转发到 QQ 群，并提示玩家
-- **QQ → MC**: QQ 群用户通过 `/chat 服务器id 内容` 命令发送消息到 MC 服务器
-- WebSocket 反向连接架构，机器人无需公网 IP
+### 新增
 
-### 版本号更新
-- Bukkit: 1.4.1-Release
-- Fabric: 1.4.1
+- 新增 `auth.enabled` / `auth.enabled=false` 配置，可关闭 QQ 验证，只保留 WebSocket 双向聊天。
+- MC 端 WebSocket 现在支持接收 QQ 消息并广播到游戏内。
+- OneBot 机器人 `/chat` 优先使用 WebSocket 发送到 MC。
+- 新增 Forge 1.7.10 版本。
 
-### 文件修改
+### 变更
 
-| 文件 | 操作 | 说明 |
-|------|------|------|
-| `pom.xml` | 修改 | 添加 Java-WebSocket 依赖 |
-| `QAuth-Fabric/build.gradle` | 修改 | 添加 Java-WebSocket 依赖 |
-| `src/main/java/com/kuank/QAuth.java` | 修改 | WebSocket 服务端 + 聊天监听 |
-| `QAuth-Fabric/.../QAuthMod.java` | 修改 | WebSocket 服务端 + 聊天监听 |
-| `QAuth_nb2/__init__.py` | 修改 | WebSocket 客户端 + /chat 命令 |
-| `src/main/resources/config.yml` | 修改 | 新增 websocket 配置节 |
+- Bukkit、Fabric、Forge 版本号统一更新为 `1.5.0`。
+- Bukkit 默认配置文件恢复为正常 UTF-8 中文。
+- Fabric 构建代理端口更新为 Clash 常用端口 `7890`。
+- Forge 1.7.10 构建修复旧 ForgeGradle 下载 URL、Forge 坐标和编译 classpath 问题。
 
-### 新增配置项
+### 构建产物
 
-**MC 服务器 (config.yml / qauth.properties)**:
-```yaml
-websocket:
-  enabled: false
-  port: 25580
-```
+- `target/Qauth-1.5.0-Release.jar`
+- `QAuth-Fabric/build/libs/qauth-fabric-1.5.0.jar`
+- `QAuth-Forge1710/build/libs/QAuth-Forge1710-1.5.0.jar`
 
-**机器人 (.env)**:
-```properties
-CHAT_GROUP_ID=123456789
-WS_SERVERS={"sv1":"ws://mc-server-ip:25580"}
-```
+## v1.4.1
 
-### 依赖要求
-- 机器人需安装: `pip install websockets`
+- 增加 MC 到 QQ 的 WebSocket 聊天转发。
+- 增加 QQ 到 MC 的 `/chat` 聊天命令。
+- 增加 `websocket.enabled` 和 `websocket.port` 配置。

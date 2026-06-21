@@ -5,16 +5,34 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.kuank</groupId>
-    <artifactId>Qauth</artifactId>
+    <artifactId>QAuth-Forge1710</artifactId>
     <version>1.5.0-Release</version>
     <packaging>jar</packaging>
 
-    <name>Qauth</name>
-
     <properties>
-        <java.version>21</java.version>
+        <java.version>1.8</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>net.minecraftforge</groupId>
+            <artifactId>forge</artifactId>
+            <version>1.7.10-10.13.4.1614</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/libs/forge-1.7.10-10.13.4.1614-universal.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>org.java-websocket</groupId>
+            <artifactId>Java-WebSocket</artifactId>
+            <version>1.5.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.6</version>
+        </dependency>
+    </dependencies>
 
     <build>
         <defaultGoal>clean package</defaultGoal>
@@ -24,8 +42,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <source>1.8</source>
+                    <target>1.8</target>
                 </configuration>
             </plugin>
             <plugin>
@@ -41,10 +59,6 @@
                         <configuration>
                             <relocations>
                                 <relocation>
-                                    <pattern>org.bstats</pattern>
-                                    <shadedPattern>com.kuank.bstats</shadedPattern>
-                                </relocation>
-                                <relocation>
                                     <pattern>org.java_websocket</pattern>
                                     <shadedPattern>com.kuank.websocket</shadedPattern>
                                 </relocation>
@@ -54,45 +68,5 @@
                 </executions>
             </plugin>
         </plugins>
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-            </resource>
-        </resources>
     </build>
-
-    <repositories>
-        <repository>
-            <id>spigotmc-repo</id>
-            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
-        </repository>
-    </repositories>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.spigotmc</groupId>
-            <artifactId>spigot-api</artifactId>
-            <version>1.21.1-R0.1-SNAPSHOT</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.bstats</groupId>
-            <artifactId>bstats-bukkit</artifactId>
-            <version>3.0.2</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.java-websocket</groupId>
-            <artifactId>Java-WebSocket</artifactId>
-            <version>1.5.4</version>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.11.0</version>
-            <scope>compile</scope>
-        </dependency>
-    </dependencies>
 </project>

@@ -24,6 +24,8 @@ if isinstance(_ws_cfg, str):
 else:
     WS_SERVERS = _ws_cfg if _ws_cfg else {}
 
+ACTIVE_WS = {}
+
 DB_FILE = "data.db"
 
 
@@ -251,32 +253,54 @@ async def handle_chat(bot: Bot, event: MessageEvent, args: Message = CommandArg(
     if not text:
         await chat_cmd.finish("用法: /chat [服务器ID] <消息>\n例如: /chat sv1 你好")
 
+    configured_servers = WS_SERVERS or RCON_SERVERS
+
     parts = text.split(maxsplit=1)
-    if len(parts) == 2 and parts[0] in RCON_SERVERS:
+    if len(parts) == 2 and parts[0] in configured_servers:
         server_id = parts[0]
         message = parts[1]
-    elif len(parts) >= 1 and RCON_SERVERS:
-        server_id = list(RCON_SERVERS.keys())[0]
+    elif len(parts) >= 1 and configured_servers:
+        server_id = list(configured_servers.keys())[0]
         message = text
     else:
         await chat_cmd.finish("未配置服务器或消息为空！")
         return
 
-    rcon_cfg = get_rcon_config(server_id)
-    if not rcon_cfg:
+    if server_id not in configured_servers:
         await chat_cmd.finish(f"未知的服务器: {server_id}")
 
     try:
-        sender_name = event.sender.card or event.sender.nickname or str(event.user_id)
-        with MCRcon(rcon_cfg["host"], rcon_cfg["password"], port=int(rcon_cfg["port"])) as mcr:
-            # 使用 tellraw 避免 [Server] 前缀
-            tellraw_json = f'{{"text":"§b[QQ] §f{sender_name}: §7{message}"}}'
-            mcr.command(f'tellraw @a {tellraw_json}')
-        await chat_cmd.finish(f"消息已发送到 {rcon_cfg.get('name', server_id)}")
+        sender_name = getattr(event.sender, "card", "") or getattr(event.sender, "nickname", "") or str(event.user_id)
+        if server_id in WS_SERVERS:
+            await send_ws_chat(server_id, sender_name, message)
+            server_name = RCON_SERVERS.get(server_id, {}).get("name", server_id)
+        else:
+            rcon_cfg = get_rcon_config(server_id)
+            if not rcon_cfg:
+                await chat_cmd.finish(f"未知的服务器: {server_id}")
+            with MCRcon(rcon_cfg["host"], rcon_cfg["password"], port=int(rcon_cfg["port"])) as mcr:
+                tellraw_json = f'{{"text":"§b[QQ] §f{sender_name}: §7{message}"}}'
+                mcr.command(f'tellraw @a {tellraw_json}')
+            server_name = rcon_cfg.get("name", server_id)
+        await chat_cmd.finish(f"消息已发送到 {server_name}")
     except FinishedException:
         raise
     except Exception as e:
         await chat_cmd.finish(f"发送失败: {e}")
+
+
+async def send_ws_chat(server_id: str, sender_name: str, message: str):
+    """Send QQ chat to a connected MC WebSocket server."""
+    ws = ACTIVE_WS.get(server_id)
+    if ws is None:
+        raise RuntimeError("WebSocket 未连接，请检查 MC 端 websocket.enabled 和 ws_servers 配置")
+
+    await ws.send(json.dumps({
+        "type": "chat",
+        "server_id": server_id,
+        "sender": sender_name,
+        "message": message,
+    }, ensure_ascii=False))
 
 
 # WebSocket 客户端 - 接收 MC 消息并转发到 QQ 群
@@ -287,6 +311,7 @@ async def ws_client(server_id: str, ws_url: str):
     while True:
         try:
             async with websockets.connect(ws_url) as ws:
+                ACTIVE_WS[server_id] = ws
                 print(f"[QAuth] WebSocket 已连接到 {server_id}: {ws_url}")
                 async for message in ws:
                     try:
@@ -306,6 +331,9 @@ async def ws_client(server_id: str, ws_url: str):
                         print(f"[QAuth] 处理 WebSocket 消息出错: {e}")
         except Exception as e:
             print(f"[QAuth] WebSocket 连接失败 ({server_id}): {e}")
+        finally:
+            if ACTIVE_WS.get(server_id) is not None:
+                ACTIVE_WS.pop(server_id, None)
             await asyncio.sleep(5)  # 5秒后重连
 
 

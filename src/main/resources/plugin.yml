@@ -1,5 +1,5 @@
 name: QAuth
-version: '1.4.1-Release'
+version: '1.5.0-Release'
 main: com.kuank.QAuth
 api-version: '1.21'
 authors: [ kuank ]
